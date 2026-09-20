@@ -199,15 +199,29 @@ jobs:
           make ${{ env.args }} olddefconfig
 
           # 断言：merge_config.sh -m 不做依赖校验（那段检查写在 RUNMAKE=false 分支之后），
-          # 依赖不满足会被 olddefconfig 静默丢弃。必需项缺一个就失败；
-          # 可选项缺了只告警 —— 别因为一个可选项把整条构建炸掉。
+          # 依赖不满足会被 olddefconfig 静默丢弃。
+          # 待查符号清单**直接从片段文件里取**（复用 merge_config.sh 那条 sed 正则），
+          # 这样以后往 configs/docker.config 加一行就自动被检查，
+          # 不会再出现「手写清单和配置文件不同步」。
+          # required 是硬性契约，缺一个就失败；其余（含可选项）只告警，不炸构建。
           required="CONFIG_UTS_NS CONFIG_PID_NS CONFIG_IPC_NS CONFIG_SYSVIPC CONFIG_CGROUP_DEVICE CONFIG_VETH CONFIG_BRIDGE_NETFILTER CONFIG_IP6_NF_NAT CONFIG_IP6_NF_TARGET_MASQUERADE CONFIG_NETFILTER_XT_MATCH_ADDRTYPE CONFIG_NETFILTER_XT_MATCH_IPVS CONFIG_POSIX_MQUEUE"
-          optional="CONFIG_USER_NS CONFIG_CGROUP_PIDS CONFIG_BLK_CGROUP CONFIG_BLK_DEV_THROTTLING CONFIG_CFQ_GROUP_IOSCHED CONFIG_CGROUP_PERF CONFIG_NET_CLS_CGROUP CONFIG_CGROUP_NET_PRIO CONFIG_MACVLAN CONFIG_IPVLAN CONFIG_VXLAN CONFIG_BRIDGE_VLAN_FILTERING CONFIG_VLAN_8021Q CONFIG_EXT4_FS_POSIX_ACL CONFIG_IP_VS"
+
+          frag_syms=$(sed -n 's/^\(# \)\{0,1\}\(CONFIG_[a-zA-Z0-9_]*\)[= ].*/\2/p' arch/${{ env.arch }}/configs/docker.config | sort -u)
+          frag_count=$(echo $frag_syms | wc -w | tr -d ' ')
+          echo "🤔 片段声明了 $frag_count 个符号"
 
           miss_req=""
-          for sym in $required; do
-            grep -q "^$sym=y" ${{ env.OUT_DIR }}/.config || miss_req="$miss_req $sym"
+          miss_opt=""
+          for sym in $frag_syms; do
+            if grep -q "^$sym=y" ${{ env.OUT_DIR }}/.config; then
+              continue
+            fi
+            case " $required " in
+              *" $sym "*) miss_req="$miss_req $sym" ;;
+              *)          miss_opt="$miss_opt $sym" ;;
+            esac
           done
+
           if [ -n "$miss_req" ]; then
             echo "::error::以下必需项没进最终 .config（依赖未满足，被 olddefconfig 丢弃）:$miss_req"
             for sym in $miss_req; do
@@ -215,16 +229,11 @@ jobs:
             done
             exit 1
           fi
-
-          miss_opt=""
-          for sym in $optional; do
-            grep -q "^$sym=y" ${{ env.OUT_DIR }}/.config || miss_opt="$miss_opt $sym"
-          done
           if [ -n "$miss_opt" ]; then
             echo "::warning::以下可选项没进最终 .config:$miss_opt"
           fi
 
-          echo "✅ 容器配置已合并：必需项 $(echo $required | wc -w | tr -d ' ') 项全部生效"
+          echo "✅ 容器配置已合并：$frag_count 个符号，必需项 $(echo $required | wc -w | tr -d ' ') 项全部生效"
 
       - name: "🎶 Build kernel"
         working-directory: ${{ env.KERNEL_NAME }}
