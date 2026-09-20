@@ -26,6 +26,12 @@ jobs:
         id: generate-matrix
         run: |
           echo "repos<<EOF" >> $GITHUB_OUTPUT
+          # 校验 defconfigFragments 的存放位置：必须写在 kernelSource 里。
+          # 若写在顶层，表达式会取到 null，导致合并被静默跳过。
+          if ! jq -s -e 'all(.[][]; (has("defconfigFragments") | not))' repos*-LineageOS.json > /dev/null; then
+            echo "::error::defconfigFragments 必须写在 kernelSource 里，不能写在顶层"
+            exit 1
+          fi
           jq -s '[.[][]]' repos*-LineageOS.json >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
       - name: "⏰ Set builddate"
@@ -166,6 +172,11 @@ jobs:
           if [ -n "$fragments" ] && [ "$fragments" != "null" ]; then
             echo "🤔 Merge config fragments => $fragments"
             for frag in $(echo "$fragments" | jq -r '.[]'); do
+              # 片段路径写错时 merge_config 会静默什么都不做，这里显式失败
+              if [ ! -f "arch/${{ env.arch }}/configs/$frag" ]; then
+                echo "::error::config fragment 不存在: arch/${{ env.arch }}/configs/$frag"
+                exit 1
+              fi
               echo "  + $frag"
               scripts/kconfig/merge_config.sh -m -O ${{ env.OUT_DIR }} ${{ env.OUT_DIR }}/.config arch/${{ env.arch }}/configs/$frag
             done
@@ -230,6 +241,9 @@ jobs:
 
           if [ -e "${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/Image.gz-dtb" ]; then
             cp -f ${{ env.OUT_DIR }}/arch/${{ env.arch }}/boot/Image.gz-dtb ./AnyKernel3/
+          else
+            # 只警告不失败：万一某机型配置本就不产出 Image.gz-dtb，不能因此打断构建
+            echo "::warning::未找到 Image.gz-dtb，打出的 AnyKernel3.zip 里不会有内核镜像（检查 CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE）"
           fi
 
           cd AnyKernel3/

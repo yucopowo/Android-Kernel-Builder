@@ -64,7 +64,24 @@ LineageOS rom 建议选择 dipper-android_kernel_xiaomi_sdm845_构建时间.zip
 > 走**小米分支**还是**高通参考板分支**（见 `arch/arm64/boot/dts/qcom/Makefile` 开头的
 > `ifeq ($(CONFIG_MACH_XIAOMI_SDM845),y)`）。若合并失效，会去编 `sdm845-v2-qvr-evt.dtb`
 > 等参考板 DTB，并报 `Reference to non-existent node or label "ts_int_active"` 这类 DTC 错误
-> —— 看到这个报错就是片段没合并成功，不是 DTS 本身有问题。
+> —— **看到这个报错，就是片段没合并成功。**
+>
+> 这个报错的来历（已逐行核对）：`sdm845-qvr.dtsi` 的触摸屏节点写的是
+> `pinctrl-0 = <&ts_int_active &ts_reset_active>`，而 `sdm845-pinctrl.dtsi` 里注册的标签
+> 其实只有 `ts_int_active1` / `ts_reset_active1` —— 那个 `ts_int_active` 是**节点名**
+> （后面没有冒号，所以不是标签）。dtc 解析 `&X` 时查的是**标签表**，因此失败。
+> 这是上游参考板分支里的一处死代码缺陷，**我们永远不该编它**。
+>
+> 所以：**不要**去 DTS 里补标签、也**不要**改 Makefile 删掉那条 `dtb-y`
+> —— Makefile 已经被 `ifeq ($(CONFIG_MACH_XIAOMI_SDM845),y)` 正确门控了，
+> 正确做法就是让配置走小米分支。
+>
+> **两道防线**（4 个 workflow 里都有，专门防上面这种「静默跳过」）：
+> 1. **矩阵生成阶段**：用 `jq` 校验 `defconfigFragments` 只能出现在 `kernelSource` 里，
+>    写到顶层就直接报错退出。之前正是写错层级导致取到 `null`、合并被静默跳过、
+>    CI 报的却是 DTC 错误，完全看不出根因。
+> 2. **合并阶段**：校验片段文件真实存在，路径写错时显式失败。
+>    `merge_config.sh` 遇到不存在的文件不会报错，只会静默什么都不做。
 
 > **关于 KernelSU 版本**：所有 workflow 里的 `KERNELSU_VERSION` 固定为 `v0.9.5`，**不要改成 `main`**。
 > `main` 分支已重构（变成 `kernel/hook/` + `kernel/core/`），不再兼容本项目的 4.9 内核，会直接编译失败：
