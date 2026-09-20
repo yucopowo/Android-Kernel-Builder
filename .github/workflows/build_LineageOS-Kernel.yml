@@ -165,7 +165,7 @@ jobs:
           echo "PATH Variable: $PATH"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
-          # 可选：合并设备专属 config 片段。
+          # ---- 1) 机型专属片段：JSON 里 defconfigFragments 声明的 ----
           # LineageOS 系内核把触摸屏/指纹/GPS 等机型配置放在
           # arch/arm64/configs/vendor/<机型>.config 里，基础 defconfig（mi845_defconfig）
           # 完全不含这些项，不合并会编出一个"能编译但刷进手机屏幕指纹全废"的内核。
@@ -180,8 +180,33 @@ jobs:
               echo "  + $frag"
               scripts/kconfig/merge_config.sh -m -O ${{ env.OUT_DIR }} ${{ env.OUT_DIR }}/.config arch/${{ env.arch }}/configs/$frag
             done
-            make ${{ env.args }} olddefconfig
           fi
+
+          # ---- 2) 容器命名空间片段：本 workflow 固定开启 ----
+          # mi845_defconfig 里这三项是关着的，dipper.config 也没打开：
+          #   CONFIG_NAMESPACES=y
+          #   # CONFIG_UTS_NS is not set
+          #   # CONFIG_PID_NS is not set
+          #   （CONFIG_IPC_NS 文件里根本没提 → 取 Kconfig 默认值 n）
+          #
+          # ⚠️ CONFIG_IPC_NS 的 Kconfig 是 "depends on (SYSVIPC || POSIX_MQUEUE)"，
+          #    不同时打开 SYSVIPC 的话，olddefconfig 会把 IPC_NS 静默丢掉。
+          #    merge_config.sh -m 不会报警 —— 它的「值没进最终 .config」检查写在
+          #    RUNMAKE=false 分支之后，-m 模式下直接 exit 了，永远跑不到。
+          printf 'CONFIG_UTS_NS=y\nCONFIG_PID_NS=y\nCONFIG_IPC_NS=y\nCONFIG_SYSVIPC=y\n' > arch/${{ env.arch }}/configs/container-ns.config
+          scripts/kconfig/merge_config.sh -m -O ${{ env.OUT_DIR }} ${{ env.OUT_DIR }}/.config arch/${{ env.arch }}/configs/container-ns.config
+          make ${{ env.args }} olddefconfig
+
+          # 断言三项确实落到最终 .config，缺一个就失败 ——
+          # 避免又编出一个"能启动、但参数没生效"的内核。
+          for sym in CONFIG_UTS_NS CONFIG_PID_NS CONFIG_IPC_NS; do
+            if ! grep -q "^$sym=y" ${{ env.OUT_DIR }}/.config; then
+              echo "::error::$sym 没进最终 .config（依赖未满足，被 olddefconfig 丢弃）"
+              grep -E "^(# )?$sym" ${{ env.OUT_DIR }}/.config || true
+              exit 1
+            fi
+          done
+          echo "✅ 容器命名空间已开启: $(grep -E '^CONFIG_(UTS_NS|PID_NS|IPC_NS|SYSVIPC)=y' ${{ env.OUT_DIR }}/.config | tr '\n' ' ')"
 
       - name: "🎶 Build kernel"
         working-directory: ${{ env.KERNEL_NAME }}
