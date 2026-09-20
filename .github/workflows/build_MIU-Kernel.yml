@@ -5,6 +5,8 @@ on:
 
 env:
   OUT_DIR: "${{ github.workspace }}/out"
+  # KernelSU 版本必须固定，不能用 main —— main 已不再兼容 4.9 内核
+  KERNELSU_VERSION: "v0.9.5"
 
 permissions:
   contents: write
@@ -139,7 +141,7 @@ jobs:
             rm -rf "./drivers/kernelsu"
           fi
 
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/${{ env.KERNELSU_VERSION }}/kernel/setup.sh" | bash -s ${{ env.KERNELSU_VERSION }}
 
           echo -e "CONFIG_KPROBES=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
@@ -152,9 +154,23 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
           arch: ${{ steps.generate-args.outputs.ARCH }}
+          fragments: ${{ toJSON(matrix.repos.defconfigFragments) }}
         run: |
           echo "PATH Variable: $PATH"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
+
+          # 可选：合并设备专属 config 片段。
+          # LineageOS 系内核把触摸屏/指纹/GPS 等机型配置放在
+          # arch/arm64/configs/vendor/<机型>.config 里，基础 defconfig（mi845_defconfig）
+          # 完全不含这些项，不合并会编出一个"能编译但刷进手机屏幕指纹全废"的内核。
+          if [ -n "$fragments" ] && [ "$fragments" != "null" ]; then
+            echo "🤔 Merge config fragments => $fragments"
+            for frag in $(echo "$fragments" | jq -r '.[]'); do
+              echo "  + $frag"
+              scripts/kconfig/merge_config.sh -m -O ${{ env.OUT_DIR }} ${{ env.OUT_DIR }}/.config arch/${{ env.arch }}/configs/$frag
+            done
+            make ${{ env.args }} olddefconfig
+          fi
 
       - name: "🎶 Build kernel"
         working-directory: ${{ env.KERNEL_NAME }}

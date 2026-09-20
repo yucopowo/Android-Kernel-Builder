@@ -30,6 +30,10 @@ MIUI rom 建议选择 dipper-Xiaomi_Kernel_OpenSource-sdm845_构建时间.zip
 
 如: 小米 8 类原生rom 选择 dipper-NGK_android_kernel_xiaomi_sdm845_********.zip
 
+LineageOS rom 建议选择 dipper-android_kernel_xiaomi_sdm845_构建时间.zip
+
+如: 小米 8 LineageOS 22.2 选择 dipper-android_kernel_xiaomi_sdm845_********.zip
+
 
 ---
 
@@ -41,10 +45,28 @@ MIUI rom 建议选择 dipper-Xiaomi_Kernel_OpenSource-sdm845_构建时间.zip
 | --- | --- |
 | `repos.dipper-MIUI.json` | MIUI 内核配置（Xiaomi_Kernel_OpenSource-sdm845, 88-zstd 分支） |
 | `repos.dipper-NGK.json` | 类原生内核配置（NGK_android_kernel_xiaomi_sdm845, t-caf-ksu 分支） |
+| `repos.dipper-LineageOS.json` | LineageOS 内核配置（LineageOS/android_kernel_xiaomi_sdm845, lineage-22.2 分支） |
 | `.github/workflows/build KernelSU_v0.9.5.yml` | 按 `repos*.json` 全量构建 |
 | `.github/workflows/build_MIU-Kernel.yml` | 只构建 MIUI 内核（读 `repos*-MIUI.json`） |
 | `.github/workflows/build_NGK-Kernel.yml` | 只构建 NGK 内核（读 `repos*-NGK.json`） |
+| `.github/workflows/build_LineageOS-Kernel.yml` | 只构建 LineageOS 内核（读 `repos*-LineageOS.json`） |
 | `.github/workflows/del.yml` | 清理旧的 workflow 运行记录 |
+
+> **关于 `defconfigFragments`**：LineageOS 内核的基础 defconfig（`vendor/xiaomi/mi845_defconfig`）
+> 并不包含触摸屏、指纹、GPS 等机型专属项，这些放在 `arch/arm64/configs/vendor/xiaomi/dipper.config`
+> 里，必须额外合并，否则会编出一个「能编译但刷进手机屏幕指纹全废」的内核。
+> 所以在 `repos.dipper-LineageOS.json` 里用 `defconfigFragments` 声明了该片段，
+> workflow 会在 defconfig 之后自动执行 `scripts/kconfig/merge_config.sh` + `olddefconfig`。
+> 没有该字段的机型配置行为完全不变。
+
+> **关于 KernelSU 版本**：所有 workflow 里的 `KERNELSU_VERSION` 固定为 `v0.9.5`，**不要改成 `main`**。
+> `main` 分支已重构（变成 `kernel/hook/` + `kernel/core/`），不再兼容本项目的 4.9 内核，会直接编译失败：
+> - `syscall_fn_t` 只在 `__x86_64__` 下自行定义，arm64 依赖内核提供，而 4.9 内核里没有这个类型
+> - `MODULE_IMPORT_NS` 未做版本保护，而 4.9 内核没有这个宏
+>
+> `v0.9.5` 是**最后一个**带 `kernel_compat.h` 且对上述两项都做了版本保护的版本
+> （`v1.0.0` 起保护被移除）。想升级请先确认新版本仍支持 4.9 内核。
+> 刷入后，KernelSU 管理器 App 也建议使用与内核模块对应的 v0.9.5。
 
 
 ---

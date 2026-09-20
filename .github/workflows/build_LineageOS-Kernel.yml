@@ -1,4 +1,4 @@
-name: "Build NGK kernels"
+name: "Build LineageOS kernels"
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
         id: generate-matrix
         run: |
           echo "repos<<EOF" >> $GITHUB_OUTPUT
-          jq -s '[.[][]]' repos*-NGK.json >> $GITHUB_OUTPUT
+          jq -s '[.[][]]' repos*-LineageOS.json >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
       - name: "⏰ Set builddate"
         id: generate-builddate
@@ -247,6 +247,6 @@ jobs:
         uses: softprops/action-gh-release@v3
         if: ${{ env.useAnykernel == 'true' && env.release == 'true' }}
         with:
-          tag_name: NGK_Kernel_v${{ env.builddate }}.${{ github.run_number }}
+          tag_name: LineageOS_Kernel_v${{ env.builddate }}.${{ github.run_number }}
           files: "${{ env.WORKSPACE }}/${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}.zip"
           generate_release_notes: true
