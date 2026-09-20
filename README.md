@@ -2,7 +2,7 @@
 
 <img src="./.assets/DogDayAndroid.png" width="200" height="175" alt="banner">
 
-<h1>小米骁龙845系列构建KernelSU</h1>
+<h1>小米 8 (dipper) 构建 KernelSU</h1>
 
 ![License](https://img.shields.io/static/v1?label=License&message=BY-NC-SA&logo=creativecommons&color=green)
 ![Language](https://img.shields.io/github/languages/top/Xiaomi-sdm845-KSU/Android-Kernel-Builder)
@@ -10,9 +10,9 @@
 ![Pull Requests](https://img.shields.io/github/issues-pr/Xiaomi-sdm845-KSU/Android-Kernel-Builder)
 <br>
 
-这是个 Github Action 每日自动构建一次小米骁龙845系列机型KernelSU内核,自动同步最新KernelSU
+这是个 Github Action 自动构建小米 8（dipper）KernelSU 内核的项目, 自动同步最新 KernelSU
 
-包含: MI 8, MIX2S, POCOPHONE F1, MI 8UD, MIX 3, MI 8 Explorer Edition
+包含: MI 8 (dipper)
 <br>
 </div>
 
@@ -22,13 +22,29 @@
 # 内核选择
 
 
-MIUI rom 建议选择 机型代号-Xiaomi_Kernel_OpenSource-sdm845_构建时间.zip
+MIUI rom 建议选择 dipper-Xiaomi_Kernel_OpenSource-sdm845_构建时间.zip
 
-如: 小米 MIX3 MIUI 12.5.1 选择 perseus-Xiaomi_Kernel_OpenSource-sdm845_********.zip
+如: 小米 8 MIUI 12.5 选择 dipper-Xiaomi_Kernel_OpenSource-sdm845_********.zip
 
-类原生rom 建议选择 机型代号-NGK_android_kernel_xiaomi_sdm845_构建时间.zip
+类原生rom 建议选择 dipper-NGK_android_kernel_xiaomi_sdm845_构建时间.zip
 
-如: 小米 MIX3 类原生rom 选择 perseus-NGK_android_kernel_xiaomi_sdm845_********.zip
+如: 小米 8 类原生rom 选择 dipper-NGK_android_kernel_xiaomi_sdm845_********.zip
+
+
+---
+
+
+# 项目结构
+
+
+| 文件 | 说明 |
+| --- | --- |
+| `repos.dipper-MIUI.json` | MIUI 内核配置（Xiaomi_Kernel_OpenSource-sdm845, 88-zstd 分支） |
+| `repos.dipper-NGK.json` | 类原生内核配置（NGK_android_kernel_xiaomi_sdm845, t-caf-ksu 分支） |
+| `.github/workflows/build KernelSU_v0.9.5.yml` | 按 `repos*.json` 全量构建 |
+| `.github/workflows/build_MIU-Kernel.yml` | 只构建 MIUI 内核（读 `repos*-MIUI.json`） |
+| `.github/workflows/build_NGK-Kernel.yml` | 只构建 NGK 内核（读 `repos*-NGK.json`） |
+| `.github/workflows/del.yml` | 清理旧的 workflow 运行记录 |
 
 
 ---
