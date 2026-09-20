@@ -64,6 +64,14 @@ jobs:
       useAnykernel: ${{ matrix.repos.AnyKernel3.use }}
       release: ${{ matrix.repos.AnyKernel3.release }}
     steps:
+      - name: "📦 Checkout builder repo"
+        uses: actions/checkout@v5
+        with:
+          # 只为拿 configs/docker.config（容器内核配置片段）。
+          # 用 path 放到子目录：checkout 默认会在工作区根目录执行 git clean -ffdx，
+          # 放子目录就不会波及后面 clone 的内核 / 工具链 / AnyKernel3。
+          path: builder
+
       - name: "⭐ Install prerequisites"
         run: |
           sudo apt-get update
@@ -182,31 +190,41 @@ jobs:
             done
           fi
 
-          # ---- 2) 容器命名空间片段：本 workflow 固定开启 ----
-          # mi845_defconfig 里这三项是关着的，dipper.config 也没打开：
-          #   CONFIG_NAMESPACES=y
-          #   # CONFIG_UTS_NS is not set
-          #   # CONFIG_PID_NS is not set
-          #   （CONFIG_IPC_NS 文件里根本没提 → 取 Kconfig 默认值 n）
-          #
-          # ⚠️ CONFIG_IPC_NS 的 Kconfig 是 "depends on (SYSVIPC || POSIX_MQUEUE)"，
-          #    不同时打开 SYSVIPC 的话，olddefconfig 会把 IPC_NS 静默丢掉。
-          #    merge_config.sh -m 不会报警 —— 它的「值没进最终 .config」检查写在
-          #    RUNMAKE=false 分支之后，-m 模式下直接 exit 了，永远跑不到。
-          printf 'CONFIG_UTS_NS=y\nCONFIG_PID_NS=y\nCONFIG_IPC_NS=y\nCONFIG_SYSVIPC=y\n' > arch/${{ env.arch }}/configs/container-ns.config
-          scripts/kconfig/merge_config.sh -m -O ${{ env.OUT_DIR }} ${{ env.OUT_DIR }}/.config arch/${{ env.arch }}/configs/container-ns.config
+          # ---- 2) 容器配置片段：从本仓库拷进内核树再合并 ----
+          # 片段路径是相对内核源码树解析的（arch/<arch>/configs/<frag>），
+          # 所以必须先把 configs/docker.config 落盘到内核树里才读得到。
+          mkdir -p arch/${{ env.arch }}/configs
+          cp -v "${{ env.WORKSPACE }}/builder/configs/docker.config" arch/${{ env.arch }}/configs/docker.config
+          scripts/kconfig/merge_config.sh -m -O ${{ env.OUT_DIR }} ${{ env.OUT_DIR }}/.config arch/${{ env.arch }}/configs/docker.config
           make ${{ env.args }} olddefconfig
 
-          # 断言三项确实落到最终 .config，缺一个就失败 ——
-          # 避免又编出一个"能启动、但参数没生效"的内核。
-          for sym in CONFIG_UTS_NS CONFIG_PID_NS CONFIG_IPC_NS; do
-            if ! grep -q "^$sym=y" ${{ env.OUT_DIR }}/.config; then
-              echo "::error::$sym 没进最终 .config（依赖未满足，被 olddefconfig 丢弃）"
-              grep -E "^(# )?$sym" ${{ env.OUT_DIR }}/.config || true
-              exit 1
-            fi
+          # 断言：merge_config.sh -m 不做依赖校验（那段检查写在 RUNMAKE=false 分支之后），
+          # 依赖不满足会被 olddefconfig 静默丢弃。必需项缺一个就失败；
+          # 可选项缺了只告警 —— 别因为一个可选项把整条构建炸掉。
+          required="CONFIG_UTS_NS CONFIG_PID_NS CONFIG_IPC_NS CONFIG_SYSVIPC CONFIG_CGROUP_DEVICE CONFIG_VETH CONFIG_BRIDGE_NETFILTER CONFIG_IP6_NF_NAT CONFIG_IP6_NF_TARGET_MASQUERADE CONFIG_NETFILTER_XT_MATCH_ADDRTYPE CONFIG_NETFILTER_XT_MATCH_IPVS CONFIG_POSIX_MQUEUE"
+          optional="CONFIG_USER_NS CONFIG_CGROUP_PIDS CONFIG_BLK_CGROUP CONFIG_BLK_DEV_THROTTLING CONFIG_CFQ_GROUP_IOSCHED CONFIG_CGROUP_PERF CONFIG_NET_CLS_CGROUP CONFIG_CGROUP_NET_PRIO CONFIG_MACVLAN CONFIG_IPVLAN CONFIG_VXLAN CONFIG_BRIDGE_VLAN_FILTERING CONFIG_VLAN_8021Q CONFIG_EXT4_FS_POSIX_ACL CONFIG_IP_VS"
+
+          miss_req=""
+          for sym in $required; do
+            grep -q "^$sym=y" ${{ env.OUT_DIR }}/.config || miss_req="$miss_req $sym"
           done
-          echo "✅ 容器命名空间已开启: $(grep -E '^CONFIG_(UTS_NS|PID_NS|IPC_NS|SYSVIPC)=y' ${{ env.OUT_DIR }}/.config | tr '\n' ' ')"
+          if [ -n "$miss_req" ]; then
+            echo "::error::以下必需项没进最终 .config（依赖未满足，被 olddefconfig 丢弃）:$miss_req"
+            for sym in $miss_req; do
+              grep -E "^(# )?$sym( |=)" ${{ env.OUT_DIR }}/.config || echo "  $sym: .config 里连一行都没有"
+            done
+            exit 1
+          fi
+
+          miss_opt=""
+          for sym in $optional; do
+            grep -q "^$sym=y" ${{ env.OUT_DIR }}/.config || miss_opt="$miss_opt $sym"
+          done
+          if [ -n "$miss_opt" ]; then
+            echo "::warning::以下可选项没进最终 .config:$miss_opt"
+          fi
+
+          echo "✅ 容器配置已合并：必需项 $(echo $required | wc -w | tr -d ' ') 项全部生效"
 
       - name: "🎶 Build kernel"
         working-directory: ${{ env.KERNEL_NAME }}
