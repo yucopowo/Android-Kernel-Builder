@@ -55,9 +55,16 @@ LineageOS rom 建议选择 dipper-android_kernel_xiaomi_sdm845_构建时间.zip
 > **关于 `defconfigFragments`**：LineageOS 内核的基础 defconfig（`vendor/xiaomi/mi845_defconfig`）
 > 并不包含触摸屏、指纹、GPS 等机型专属项，这些放在 `arch/arm64/configs/vendor/xiaomi/dipper.config`
 > 里，必须额外合并，否则会编出一个「能编译但刷进手机屏幕指纹全废」的内核。
-> 所以在 `repos.dipper-LineageOS.json` 里用 `defconfigFragments` 声明了该片段，
+> 所以在 `repos.dipper-LineageOS.json` 的 **`kernelSource` 里**用 `defconfigFragments` 声明该片段
+> （workflow 读的是 `matrix.repos.kernelSource.defconfigFragments`），
 > workflow 会在 defconfig 之后自动执行 `scripts/kconfig/merge_config.sh` + `olddefconfig`。
 > 没有该字段的机型配置行为完全不变。
+>
+> 该片段里含 `CONFIG_MACH_XIAOMI_SDM845=y` / `CONFIG_MACH_XIAOMI_E1N=y`，它们决定内核
+> 走**小米分支**还是**高通参考板分支**（见 `arch/arm64/boot/dts/qcom/Makefile` 开头的
+> `ifeq ($(CONFIG_MACH_XIAOMI_SDM845),y)`）。若合并失效，会去编 `sdm845-v2-qvr-evt.dtb`
+> 等参考板 DTB，并报 `Reference to non-existent node or label "ts_int_active"` 这类 DTC 错误
+> —— 看到这个报错就是片段没合并成功，不是 DTS 本身有问题。
 
 > **关于 KernelSU 版本**：所有 workflow 里的 `KERNELSU_VERSION` 固定为 `v0.9.5`，**不要改成 `main`**。
 > `main` 分支已重构（变成 `kernel/hook/` + `kernel/core/`），不再兼容本项目的 4.9 内核，会直接编译失败：

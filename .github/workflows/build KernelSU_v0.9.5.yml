@@ -156,7 +156,7 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
           arch: ${{ steps.generate-args.outputs.ARCH }}
-          fragments: ${{ toJSON(matrix.repos.defconfigFragments) }}
+          fragments: ${{ toJSON(matrix.repos.kernelSource.defconfigFragments) }}
         run: |
           echo "PATH Variable: $PATH"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
